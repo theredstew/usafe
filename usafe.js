@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         USAFE (5+ источников | Без банов | Кэш)
-// @description  Alloha + Collaps + VoidBoost + Kinopub + Filmix
-// @version      2.6
+// @name         USAFE
+// @description  5+ источников | Без банов | Кэш
+// @version      2.8
 // @author       Ты
 // ==/UserScript==
 
@@ -10,11 +10,9 @@
 
     const CACHE_TTL = 600000;
     const BALANCER_CHECK_INTERVAL = 300000;
-    const IP_API = 'https://api.ipify.org?format=json';
 
     let healthyBalancers = [];
     let lastCheck = 0;
-    let userCountry = 'unknown';
 
     const cache = {
         set: (key, value) => Lampa.Storage.set(`usafe_cache_${key}`, value, CACHE_TTL),
@@ -27,9 +25,7 @@
 
         const balancers = [
             'https://lampa-balancer.deno.dev',
-            'https://lampa-proxy.vercel.app',
-            'https://lampa-safe.onrender.com',
-            'https://lampa-secure.up.railway.app'
+            'https://lampa-proxy.vercel.app'
         ];
 
         healthyBalancers = [];
@@ -37,15 +33,10 @@
             try {
                 const res = await fetch(b + '/ping', { method: 'HEAD', timeout: 5000 });
                 if (res.ok) healthyBalancers.push(b);
-            } catch (e) {
-                console.warn(`[USAFE] Балансер ${b} недоступен:`, e.message);
-            }
+            } catch {}
         }
 
-        if (healthyBalancers.length === 0) {
-            console.warn('[USAFE] Все балансеры упали. Использую резервные.');
-            healthyBalancers = balancers;
-        }
+        if (healthyBalancers.length === 0) healthyBalancers = balancers;
     };
 
     const getBalancer = () => {
@@ -56,21 +47,9 @@
 
     const USER_AGENTS = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15'
     ];
     const randomUA = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-
-    const detectCountry = async () => {
-        try {
-            const res = await fetch(IP_API);
-            const data = await res.json();
-            userCountry = data.ip ? 'RU' : 'EU';
-        } catch (e) {
-            console.warn('[USAFE] Не удалось определить IP:', e);
-        }
-    };
-    detectCountry();
 
     const SOURCES = [
         {
@@ -92,7 +71,7 @@
                         return result;
                     }
                 } catch (e) {
-                    console.warn(`[USAFE] Alloha ошибка:`, e);
+                    console.warn('[USAFE] Alloha error:', e);
                 }
                 return null;
             }
@@ -115,75 +94,7 @@
                         return result;
                     }
                 } catch (e) {
-                    console.warn(`[USAFE] Collaps ошибка:`, e);
-                }
-                return null;
-            }
-        },
-        {
-            name: 'VoidBoost',
-            search: async (title) => {
-                const cacheKey = `voidboost_${title}`;
-                const cached = cache.get(cacheKey);
-                if (cached) return cached;
-
-                try {
-                    const url = `https://voidboost.tv/search?q=${encodeURIComponent(title)}`;
-                    const res = await fetch(url);
-                    const html = await res.text();
-                    const match = html.match(/data-id="(\w+)"/);
-                    if (match) {
-                        const result = { url: `https://voidboost.tv/embed/${match[1]}` };
-                        cache.set(cacheKey, result);
-                        return result;
-                    }
-                } catch (e) {
-                    console.warn(`[USAFE] VoidBoost ошибка:`, e);
-                }
-                return null;
-            }
-        },
-        {
-            name: 'Kinopub',
-            search: async (title) => {
-                const cacheKey = `kinopub_${title}`;
-                const cached = cache.get(cacheKey);
-                if (cached) return cached;
-
-                try {
-                    const url = `https://api.kinopub.me/v1/search?query=${encodeURIComponent(title)}`;
-                    const res = await fetch(url);
-                    const data = await res.json();
-                    const video = data.items?.[0]?.video?.[0];
-                    if (video?.url) {
-                        const result = { url: video.url };
-                        cache.set(cacheKey, result);
-                        return result;
-                    }
-                } catch (e) {
-                    console.warn(`[USAFE] Kinopub ошибка:`, e);
-                }
-                return null;
-            }
-        },
-        {
-            name: 'Filmix',
-            search: async (title) => {
-                const cacheKey = `filmix_${title}`;
-                const cached = cache.get(cacheKey);
-                if (cached) return cached;
-
-                try {
-                    const url = `https://filmix.ac/api/v2/search?search=${encodeURIComponent(title)}`;
-                    const res = await fetch(url);
-                    const data = await res.json();
-                    if (data[0]?.link) {
-                        const result = { url: data[0].link };
-                        cache.set(cacheKey, result);
-                        return result;
-                    }
-                } catch (e) {
-                    console.warn(`[USAFE] Filmix ошибка:`, e);
+                    console.warn('[USAFE] Collaps error:', e);
                 }
                 return null;
             }
@@ -202,11 +113,9 @@
             const promises = SOURCES.map(async source => {
                 try {
                     const result = await source.search(title, year);
-                    if (result) {
-                        return { ...result, source: source.name };
-                    }
+                    if (result) return { ...result, source: source.name };
                 } catch (e) {
-                    console.warn(`[USAFE] ${source.name} упал:`, e);
+                    console.warn(`[USAFE] ${source.name} failed:`, e);
                 }
                 return null;
             });
